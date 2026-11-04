@@ -1,0 +1,2171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>2軸ポジショニング・マップ | 授業・合意形成ツール</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <style>
+    body {
+      font-family: 'Noto Sans JP', 'Inter', sans-serif;
+      background-color: #f8fafc;
+      color: #1e293b;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    input, textarea {
+      user-select: text;
+    }
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 8px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 8px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    /* パルスアニメーション */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.8); opacity: 0.8; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+    .pulse-circle::before {
+      content: '';
+      position: absolute;
+      inset: -8px;
+      border-radius: 9999px;
+      background-color: #3b82f6;
+      animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+      z-index: -1;
+    }
+    /* キャンバス親要素のレスポンシブ正方形維持 */
+    .map-square-container {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      aspect-ratio: 1 / 1;
+      margin: 0 auto;
+    }
+    .fullscreen-mode .map-square-container {
+      max-width: min(78vh, 85vw);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-50 text-slate-800">
+
+  <!-- ==================== ヘッダー ==================== -->
+  <header id="appHeader" class="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 shadow-sm sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      
+      <!-- ロゴとタイトル -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center text-white shadow-md shadow-indigo-100">
+          <i class="fa-solid fa-arrows-up-down-left-right text-lg"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-base sm:text-lg tracking-tight text-slate-900">2軸ポジショニング・マップ</h1>
+            <span id="syncStatusBadge" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span id="syncStatusText">準備完了</span>
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 hidden sm:block">みんなの意見の「ちらばり」から新しい問いを見つけよう</p>
+        </div>
+      </div>
+
+      <!-- モード切替タブ（iPadで押しやすい大きめ設計） -->
+      <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 order-3 lg:order-2 w-full lg:w-auto justify-center">
+        <button onclick="switchMode('student')" id="tabStudent" class="flex-1 lg:flex-initial px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 bg-white text-indigo-600 shadow-sm">
+          <i class="fa-solid fa-hand-pointer"></i>
+          <span>じぶんの意見</span>
+        </button>
+        <button onclick="switchMode('board')" id="tabBoard" class="flex-1 lg:flex-initial px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900">
+          <i class="fa-solid fa-users-viewfinder"></i>
+          <span>みんなの分布</span>
+          <span id="headerCountBadge" class="ml-1 px-2 py-0.5 text-xs rounded-full bg-indigo-100 text-indigo-700 font-extrabold">0</span>
+        </button>
+        <button onclick="switchMode('teacher')" id="tabTeacher" class="flex-1 lg:flex-initial px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900">
+          <i class="fa-solid fa-sliders"></i>
+          <span>先生・設定</span>
+        </button>
+      </div>
+
+      <!-- ルームコード＆ガイドボタン -->
+      <div class="flex items-center gap-2 order-2 lg:order-3">
+        <button onclick="openRoomModal()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-bold flex items-center gap-1.5 transition border border-slate-200" title="クラスや集会ごとに部屋を分けられます">
+          <i class="fa-solid fa-door-open text-indigo-500"></i>
+          <span>ルーム:</span>
+          <span id="currentRoomDisplay" class="font-mono text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-slate-200">CLASS1</span>
+        </button>
+        <button onclick="openGuideModal()" class="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition text-sm font-bold flex items-center gap-1" title="授業での使い方・他校への共有方法">
+          <i class="fa-regular fa-circle-question text-base"></i>
+          <span class="hidden md:inline text-xs">活用ガイド</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ==================== テーマ（問い）バナー ==================== -->
+  <div class="bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-700 text-white px-4 py-2.5 shadow-sm">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <span class="px-2.5 py-0.5 rounded-md bg-white/20 text-xs font-bold tracking-wider uppercase shrink-0">今日のテーマ</span>
+        <h2 id="bannerPromptText" class="font-bold text-base sm:text-lg leading-snug">クラス目標「全員が毎日笑顔で過ごす」についてどう思う？</h2>
+      </div>
+      <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
+        <span id="lockStatusBadge" class="hidden px-2.5 py-0.5 rounded-full bg-rose-500 text-white text-xs font-bold items-center gap-1">
+          <i class="fa-solid fa-lock"></i> 投票ストップ中
+        </span>
+        <button onclick="toggleFullscreenBoard()" id="fullscreenBtn" class="hidden px-3 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-semibold items-center gap-1.5 transition">
+          <i class="fa-solid fa-expand"></i>
+          <span>大きく映す</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== メインコンテンツ ==================== -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 flex flex-col">
+
+    <!-- ==========================================================
+         1. 児童・生徒モード（じぶんの意見を入力・タップ）
+         ========================================================== -->
+    <section id="viewStudent" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      
+      <!-- 左側：インタラクティブ座標平面（タップエリア） -->
+      <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 p-3 sm:p-5 flex flex-col items-center">
+        <div class="w-full flex items-center justify-between mb-2">
+          <span class="text-xs sm:text-sm font-bold text-slate-600 flex items-center gap-1.5">
+            <span class="w-6 h-6 rounded-full bg-indigo-600 text-white inline-flex items-center justify-center text-xs">1</span>
+            マップの上をタップして、自分の位置を決めよう
+          </span>
+          <span id="studentPosLabel" class="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+            真ん中 (0, 0)
+          </span>
+        </div>
+
+        <!-- 座標平面コンテナ -->
+        <div class="map-square-container my-1">
+          <canvas id="studentCanvas" class="w-full h-full rounded-2xl border-2 border-slate-200 shadow-inner cursor-pointer touch-none bg-white"></canvas>
+
+          <!-- 上ラベル -->
+          <div class="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none">
+            <span id="stLabelTop" class="px-3 py-1 rounded-full bg-rose-600 text-white font-bold text-xs sm:text-sm shadow-md whitespace-nowrap">
+              メリットが大きい
+            </span>
+          </div>
+          <!-- 下ラベル -->
+          <div class="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none">
+            <span id="stLabelBottom" class="px-3 py-1 rounded-full bg-slate-700 text-white font-bold text-xs sm:text-sm shadow-md whitespace-nowrap">
+              メリットが小さい・課題あり
+            </span>
+          </div>
+          <!-- 左ラベル -->
+          <div class="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
+            <span id="stLabelLeft" class="px-2.5 py-1.5 rounded-xl bg-amber-600 text-white font-bold text-xs sm:text-sm shadow-md max-w-[110px] sm:max-w-[150px] text-center leading-tight block">
+              実現がむずかしい
+            </span>
+          </div>
+          <!-- 右ラベル -->
+          <div class="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+            <span id="stLabelRight" class="px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs sm:text-sm shadow-md max-w-[110px] sm:max-w-[150px] text-center leading-tight block">
+              実現しやすい
+            </span>
+          </div>
+        </div>
+
+        <!-- クイック微調整ボタン（iPad操作補助） -->
+        <div class="w-full flex items-center justify-between text-xs text-slate-500 mt-2 px-1">
+          <span><i class="fa-solid fa-arrows-up-down-left-right mr-1 text-indigo-500"></i>指でドラッグして自由に動かせます</span>
+          <button onclick="resetStudentPinCenter()" class="text-slate-500 hover:text-indigo-600 font-semibold flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-slate-100">
+            <i class="fa-solid fa-rotate-left"></i> 真ん中に戻す
+          </button>
+        </div>
+      </div>
+
+      <!-- 右側：名前・理由の入力＆送信パネル -->
+      <div class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 flex flex-col gap-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <span class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-indigo-600 text-white inline-flex items-center justify-center text-xs">2</span>
+            理由を書いておくろう
+          </span>
+          <span id="myVoteStatusBadge" class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
+            未送信
+          </span>
+        </div>
+
+        <!-- 選択中の位置プレビューカード -->
+        <div class="bg-slate-50 rounded-xl p-3.5 border border-slate-200 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-slate-500 font-medium">いま選んでいる場所</p>
+            <p id="studentQuadrantDesc" class="text-sm sm:text-base font-bold text-indigo-700 mt-0.5">
+              真ん中付近（どちらともいえない）
+            </p>
+          </div>
+          <div class="text-right font-mono text-xs bg-white px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600">
+            <div>横(X): <span id="stCoordX" class="font-bold text-slate-900">0</span></div>
+            <div>縦(Y): <span id="stCoordY" class="font-bold text-slate-900">0</span></div>
+          </div>
+        </div>
+
+        <!-- 名前または番号 -->
+        <div>
+          <label class="block text-xs sm:text-sm font-bold text-slate-700 mb-1.5">
+            なまえ（または出席番号・グループ名）
+          </label>
+          <input type="text" id="studentNameInput" placeholder="例：3番 山田 / A班" maxlength="25"
+            class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-base font-medium transition">
+        </div>
+
+        <!-- 理由・コメント -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs sm:text-sm font-bold text-slate-700">
+              なぜその場所にした？（理由・考え）
+            </label>
+            <span class="text-xs text-slate-400">みじかくてもOK</span>
+          </div>
+          <textarea id="studentReasonInput" rows="3" maxlength="200"
+            placeholder="例：みんなが楽しくなるからメリットは大きいけれど、準備に時間がかかりそうだから。"
+            class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-base leading-relaxed transition resize-none"></textarea>
+        </div>
+
+        <!-- ドットの色選び（自分のドットを見つけやすくする） -->
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-2">
+            自分のドットの色（グループ分けにも使えます）
+          </label>
+          <div class="flex items-center gap-2.5 flex-wrap" id="colorPickerContainer">
+            <button type="button" onclick="selectDotColor('#3b82f6')" data-color="#3b82f6" class="color-btn w-9 h-9 rounded-full bg-blue-500 ring-4 ring-offset-2 ring-blue-400 transition transform active:scale-95 flex items-center justify-center text-white" title="青"><i class="fa-solid fa-check text-xs"></i></button>
+            <button type="button" onclick="selectDotColor('#ef4444')" data-color="#ef4444" class="color-btn w-9 h-9 rounded-full bg-red-500 transition transform active:scale-95 flex items-center justify-center text-white" title="赤"></button>
+            <button type="button" onclick="selectDotColor('#10b981')" data-color="#10b981" class="color-btn w-9 h-9 rounded-full bg-emerald-500 transition transform active:scale-95 flex items-center justify-center text-white" title="緑"></button>
+            <button type="button" onclick="selectDotColor('#f59e0b')" data-color="#f59e0b" class="color-btn w-9 h-9 rounded-full bg-amber-500 transition transform active:scale-95 flex items-center justify-center text-white" title="黄"></button>
+            <button type="button" onclick="selectDotColor('#8b5cf6')" data-color="#8b5cf6" class="color-btn w-9 h-9 rounded-full bg-violet-500 transition transform active:scale-95 flex items-center justify-center text-white" title="紫"></button>
+            <button type="button" onclick="selectDotColor('#ec4899')" data-color="#ec4899" class="color-btn w-9 h-9 rounded-full bg-pink-500 transition transform active:scale-95 flex items-center justify-center text-white" title="ピンク"></button>
+          </div>
+        </div>
+
+        <!-- 送信ボタン -->
+        <button id="submitVoteBtn" onclick="submitStudentVote()"
+          class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 active:scale-[0.99] text-white font-bold text-base sm:text-lg shadow-lg shadow-indigo-200 transition flex items-center justify-center gap-2.5 mt-1">
+          <i class="fa-solid fa-paper-plane"></i>
+          <span id="submitVoteBtnText">この位置で意見をおくる</span>
+        </button>
+
+        <p class="text-xs text-slate-500 text-center leading-relaxed">
+          💡 話し合いのあとで考えが変わったら、もう一度場所を動かして「意見を更新する」をおすと、<strong>考えがどう動いたか（矢印）</strong>も記録されます。
+        </p>
+      </div>
+    </section>
+
+    <!-- ==========================================================
+         2. 全体・先生モード（みんなの分布・ヒートマップ・意見分析）
+         ========================================================== -->
+    <section id="viewBoard" class="hidden flex-1 flex-col gap-4">
+      
+      <!-- ツールバー（表示モード・500人対応ヒートマップ・匿名切替など） -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 flex flex-wrap items-center justify-between gap-2">
+        
+        <!-- 左：視覚化スタイル切替 -->
+        <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 flex-wrap">
+          <button onclick="setVisualMode('dots')" id="visBtnDots" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-white text-indigo-700 shadow-sm">
+            <i class="fa-solid fa-circle-dot text-indigo-500"></i>
+            <span>ドット表示</span>
+          </button>
+          <button onclick="setVisualMode('heatmap')" id="visBtnHeatmap" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900">
+            <i class="fa-solid fa-fire text-rose-500"></i>
+            <span>ヒートマップ(大人数用)</span>
+          </button>
+          <button onclick="setVisualMode('both')" id="visBtnBoth" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900">
+            <i class="fa-solid fa-layer-group text-amber-500"></i>
+            <span>重ね合わせ</span>
+          </button>
+        </div>
+
+        <!-- 中央：分析補助トグルボタン群 -->
+        <div class="flex items-center gap-2 flex-wrap">
+          <button onclick="toggleAnonymousMode()" id="btnAnonymous" class="px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-amber-50 border-amber-300 text-amber-800" title="発表前に名前を隠して意見だけに注目できます">
+            <i class="fa-solid fa-user-secret"></i>
+            <span id="anonymousBtnText">名前: 非表示(匿名)</span>
+          </button>
+
+          <button onclick="toggleQuadrantStats()" id="btnQuadStats" class="px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-indigo-50 border-indigo-200 text-indigo-700">
+            <i class="fa-solid fa-chart-pie"></i>
+            <span>エリア別割合(%)</span>
+          </button>
+
+          <button onclick="toggleAveragePin()" id="btnAvgPin" class="px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-slate-100 border-slate-200 text-slate-600">
+            <i class="fa-solid fa-crosshairs"></i>
+            <span>全体の重心</span>
+          </button>
+
+          <button onclick="toggleTrailArrows()" id="btnTrails" class="px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-slate-100 border-slate-200 text-slate-600" title="話し合い前後で意見がどう移動したか矢印で表示">
+            <i class="fa-solid fa-arrow-trend-up"></i>
+            <span>意見の移動</span>
+          </button>
+        </div>
+
+        <!-- 右：クイックデモ＆画像保存 -->
+        <div class="flex items-center gap-2">
+          <button onclick="exportCanvasImage()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-bold flex items-center gap-1.5 transition" title="分布図を画像として保存">
+            <i class="fa-solid fa-camera"></i>
+            <span class="hidden sm:inline">画像保存</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- メインボード領域：左にマップ、右に意見ピックアップ＆象限フィルター -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start flex-1">
+        
+        <!-- 左：全体マップ -->
+        <div id="boardMapCol" class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 p-3 sm:p-5 flex flex-col items-center relative">
+          
+          <div class="w-full flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xs sm:text-sm font-bold text-slate-700">
+                <i class="fa-solid fa-hand-pointer text-indigo-500 mr-1"></i>ドットをタップすると理由が見られます
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate-500">回答数: <strong id="boardTotalCount" class="text-slate-900 text-sm">0</strong> 人</span>
+            </div>
+          </div>
+
+          <!-- 全体座標平面コンテナ -->
+          <div class="map-square-container my-1">
+            <canvas id="boardCanvas" class="w-full h-full rounded-2xl border-2 border-slate-200 shadow-inner cursor-pointer touch-none bg-white"></canvas>
+
+            <!-- 上ラベル -->
+            <div class="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none">
+              <span id="bdLabelTop" class="px-3.5 py-1 rounded-full bg-rose-600 text-white font-bold text-xs sm:text-sm shadow-md whitespace-nowrap">
+                メリットが大きい
+              </span>
+            </div>
+            <!-- 下ラベル -->
+            <div class="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none">
+              <span id="bdLabelBottom" class="px-3.5 py-1 rounded-full bg-slate-700 text-white font-bold text-xs sm:text-sm shadow-md whitespace-nowrap">
+                メリットが小さい・課題あり
+              </span>
+            </div>
+            <!-- 左ラベル -->
+            <div class="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
+              <span id="bdLabelLeft" class="px-2.5 py-1.5 rounded-xl bg-amber-600 text-white font-bold text-xs sm:text-sm shadow-md max-w-[115px] sm:max-w-[150px] text-center leading-tight block">
+                実現がむずかしい
+              </span>
+            </div>
+            <!-- 右ラベル -->
+            <div class="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+              <span id="bdLabelRight" class="px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs sm:text-sm shadow-md max-w-[115px] sm:max-w-[150px] text-center leading-tight block">
+                実現しやすい
+              </span>
+            </div>
+
+            <!-- 選択されたドットのポップアップカード（マップ上オーバーレイ） -->
+            <div id="selectedVotePopup" class="hidden absolute z-20 left-4 right-4 bottom-12 bg-slate-900/95 backdrop-blur-md text-white p-4 rounded-2xl shadow-2xl border border-slate-700 transition-all">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-2.5">
+                  <span id="popupColorDot" class="w-4 h-4 rounded-full bg-blue-500 ring-2 ring-white shrink-0"></span>
+                  <div>
+                    <span id="popupVoterName" class="font-bold text-sm sm:text-base text-white">回答者</span>
+                    <span id="popupCoords" class="ml-2 text-xs font-mono text-slate-300 bg-white/10 px-2 py-0.5 rounded">(X:0, Y:0)</span>
+                  </div>
+                </div>
+                <button onclick="closeSelectedVotePopup()" class="text-slate-400 hover:text-white p-1">
+                  <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+              </div>
+              <p id="popupReasonText" class="mt-2 text-sm sm:text-base text-slate-100 leading-relaxed font-medium bg-white/10 p-3 rounded-xl">
+                ここに理由が表示されます
+              </p>
+            </div>
+          </div>
+
+          <!-- 下部：授業での発問ヒントバー -->
+          <div class="w-full mt-2 bg-indigo-50/80 border border-indigo-100 rounded-xl px-3.5 py-2 flex items-center justify-between gap-2 text-xs text-indigo-900">
+            <div class="flex items-center gap-2">
+              <span class="font-bold bg-indigo-600 text-white px-2 py-0.5 rounded-md shrink-0">問いのヒント</span>
+              <span id="questionHintText" class="font-medium">「なぜこのエリアに意見が集まったのかな？」「離れた場所にある意見にはどんな大切な視点があるだろう？」</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右：エリア別絞り込み＆意見リスト -->
+        <div id="boardListCol" class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-col h-[560px] lg:h-[660px]">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+            <h3 class="font-bold text-sm sm:text-base text-slate-800 flex items-center gap-2">
+              <i class="fa-regular fa-comments text-indigo-600"></i>
+              <span>みんなの理由・意見一覧</span>
+            </h3>
+            <span id="filteredCountLabel" class="text-xs font-bold text-slate-500">0件を表示中</span>
+          </div>
+
+          <!-- 4象限フィルターボタン -->
+          <div class="grid grid-cols-5 gap-1.5 my-3">
+            <button onclick="setQuadrantFilter('ALL')" id="qf_ALL" class="quad-filter-btn py-2 px-1 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-sm transition text-center">
+              すべて
+            </button>
+            <button onclick="setQuadrantFilter('Q1')" id="qf_Q1" class="quad-filter-btn py-2 px-1 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition text-center">
+              ↗ 右上
+            </button>
+            <button onclick="setQuadrantFilter('Q2')" id="qf_Q2" class="quad-filter-btn py-2 px-1 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition text-center">
+              ↖ 左上
+            </button>
+            <button onclick="setQuadrantFilter('Q3')" id="qf_Q3" class="quad-filter-btn py-2 px-1 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition text-center">
+              ↙ 左下
+            </button>
+            <button onclick="setQuadrantFilter('Q4')" id="qf_Q4" class="quad-filter-btn py-2 px-1 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition text-center">
+              ↘ 右下
+            </button>
+          </div>
+
+          <!-- キーワード検索 -->
+          <div class="relative mb-3">
+            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input type="text" id="reasonSearchInput" oninput="renderBoard()" placeholder="キーワードや名前で意見をさがす..."
+              class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-400 outline-none text-xs sm:text-sm">
+          </div>
+
+          <!-- 意見カードリスト（スクロール） -->
+          <div id="opinionsListContainer" class="flex-1 overflow-y-auto space-y-2.5 pr-1">
+            <!-- JSで動的にレンダリング -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==========================================================
+         3. 先生メニュー（軸の設定・テンプレート・40人/500人デモ生成）
+         ========================================================== -->
+    <section id="viewTeacher" class="hidden flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      
+      <!-- 左カラム：テーマと2軸のカスタマイズ -->
+      <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6 space-y-5">
+        <div class="border-b border-slate-100 pb-3 flex items-center justify-between">
+          <div>
+            <h3 class="font-bold text-base sm:text-lg text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-pen-ruler text-indigo-600"></i>
+              <span>授業テーマと2軸ラベルの設定</span>
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">テンプレートから選ぶか、自由に言葉を書きかえてすぐに授業を始められます</p>
+          </div>
+        </div>
+
+        <!-- 授業テンプレート選択 -->
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+            📚 ワンタップ授業テンプレート（総合・学活・道徳・全校集会）
+          </label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button onclick="applyTemplate(0)" class="text-left p-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 transition group">
+              <div class="font-bold text-xs sm:text-sm text-slate-800 group-hover:text-indigo-700">① 学級会・企画の合意形成</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">「メリット大・小」×「実現しやすい・難しい」</div>
+            </button>
+            <button onclick="applyTemplate(1)" class="text-left p-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 transition group">
+              <div class="font-bold text-xs sm:text-sm text-slate-800 group-hover:text-indigo-700">② 総合的な学習・探究テーマ</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">「社会・地域のため・個人のため」×「今すぐ・将来」</div>
+            </button>
+            <button onclick="applyTemplate(2)" class="text-left p-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 transition group">
+              <div class="font-bold text-xs sm:text-sm text-slate-800 group-hover:text-indigo-700">③ 道徳・討論（賛否と確信度）</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">「自信がある・迷っている」×「賛成・反対」</div>
+            </button>
+            <button onclick="applyTemplate(3)" class="text-left p-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 transition group">
+              <div class="font-bold text-xs sm:text-sm text-slate-800 group-hover:text-indigo-700">④ 全校集会・行事アンケート</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">「とても楽しみ・不安がある」×「準備OK・これから」</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- 自由編集フォーム -->
+        <div class="space-y-4 pt-2 border-t border-slate-100">
+          <div>
+            <label class="block text-xs sm:text-sm font-bold text-slate-700 mb-1">今日のテーマ（問いかけ）</label>
+            <input type="text" id="cfgPromptInput" value="クラス目標「全員が毎日笑顔で過ごす」についてどう思う？"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none text-sm sm:text-base font-medium">
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-rose-600 mb-1">⬆️ 上の軸ラベル（Y軸＋）</label>
+              <input type="text" id="cfgTopInput" value="メリットが大きい"
+                class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:border-rose-500 outline-none text-sm font-medium">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">⬇️ 下の軸ラベル（Y軸－）</label>
+              <input type="text" id="cfgBottomInput" value="メリットが小さい・課題あり"
+                class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:border-slate-500 outline-none text-sm font-medium">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-amber-600 mb-1">⬅️ 左の軸ラベル（X軸－）</label>
+              <input type="text" id="cfgLeftInput" value="実現がむずかしい"
+                class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:border-amber-500 outline-none text-sm font-medium">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-emerald-600 mb-1">➡️ 右の軸ラベル（X軸＋）</label>
+              <input type="text" id="cfgRightInput" value="実現しやすい"
+                class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:border-emerald-500 outline-none text-sm font-medium">
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+            <button onclick="toggleVotingLock()" id="btnLockVoting" class="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs sm:text-sm flex items-center gap-2 transition">
+              <i class="fa-solid fa-lock-open text-emerald-600"></i>
+              <span>現在：投票を受付中（タップでロック）</span>
+            </button>
+
+            <button onclick="saveTeacherConfig()" class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md shadow-indigo-100 transition flex items-center gap-2">
+              <i class="fa-solid fa-check"></i>
+              <span>テーマ・軸の設定を反映する</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右カラム：シミュレーション（40人/500人体験）＆データ管理 -->
+      <div class="lg:col-span-5 space-y-5">
+        
+        <!-- シミュレーションカード（他校の先生へのデモにも最適） -->
+        <div class="bg-gradient-to-br from-indigo-900 to-slate-900 text-white rounded-2xl shadow-md p-5 sm:p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="px-2.5 py-0.5 rounded-full bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 text-xs font-bold">
+              先生向けお試し・研修用
+            </span>
+            <i class="fa-solid fa-wand-magic-sparkles text-amber-400 text-lg"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-base sm:text-lg">授業・全校集会シミュレーション</h3>
+            <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+              児童・生徒のiPadをつなぐ前に、40人クラスや500人全校集会で「どんな分布図やヒートマップになるか」をワンタップで体験できます。
+            </p>
+          </div>
+
+          <div class="space-y-2.5 pt-1">
+            <button onclick="generateSimulationData(40)" class="w-full py-3 px-4 rounded-xl bg-white hover:bg-indigo-50 text-slate-900 font-bold text-sm shadow transition flex items-center justify-between">
+              <span class="flex items-center gap-2.5">
+                <span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center"><i class="fa-solid fa-chalkboard-user"></i></span>
+                <span>40人（学級クラス）の意見を生成</span>
+              </span>
+              <span class="text-xs text-indigo-600 font-extrabold">体験する →</span>
+            </button>
+
+            <button onclick="generateSimulationData(500)" class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-sm shadow transition flex items-center justify-between">
+              <span class="flex items-center gap-2.5">
+                <span class="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center"><i class="fa-solid fa-people-roof"></i></span>
+                <span>500人（全校集会）の意見を生成</span>
+              </span>
+              <span class="text-xs bg-black/20 px-2 py-0.5 rounded-md">ヒートマップ自動ON</span>
+            </button>
+
+            <button onclick="simulateOpinionShift()" class="w-full py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs sm:text-sm border border-white/15 transition flex items-center justify-center gap-2">
+              <i class="fa-solid fa-arrows-spin text-emerald-300"></i>
+              <span>話し合い後の「意見の移動（変容）」をシミュレート</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- データ出力・リセット管理 -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+          <h3 class="font-bold text-sm sm:text-base text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-database text-slate-500"></i>
+            <span>データの保存・リセット</span>
+          </h3>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button onclick="exportCSV()" class="py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition">
+              <i class="fa-solid fa-file-csv text-emerald-600 text-base"></i>
+              <span>CSVで一覧をダウンロード</span>
+            </button>
+            <button onclick="exportCanvasImage()" class="py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition">
+              <i class="fa-solid fa-image text-indigo-600 text-base"></i>
+              <span>マップを画像(PNG)保存</span>
+            </button>
+          </div>
+
+          <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+            <span class="text-xs text-slate-500">新しい授業を始めるときは回答をクリアできます</span>
+            <button onclick="openResetConfirmModal()" class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-trash-can"></i>
+              <span>すべての回答をリセット</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== ルーム変更モーダル ==================== -->
+  <div id="roomModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-lg text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-door-open text-indigo-600"></i>
+          <span>ルームコードの切り替え</span>
+        </h3>
+        <button onclick="closeRoomModal()" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+        同じルームコードを入力したiPad同士でマップが共有されます。クラスごと（例：<code class="bg-slate-100 px-1.5 py-0.5 rounded font-bold">5-1</code>、<code class="bg-slate-100 px-1.5 py-0.5 rounded font-bold">6-2</code>）や全校集会（例：<code class="bg-slate-100 px-1.5 py-0.5 rounded font-bold">ZENKO</code>）など自由な英数字で分けられます。
+      </p>
+      <div>
+        <label class="block text-xs font-bold text-slate-700 mb-1">ルームコード（半角英数字）</label>
+        <input type="text" id="roomCodeInput" value="CLASS1" maxlength="15"
+          class="w-full px-4 py-3 rounded-xl border border-slate-300 font-mono text-lg font-bold uppercase text-indigo-700 focus:border-indigo-500 outline-none">
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        <span class="text-xs text-slate-400 self-center mr-1">よく使う例:</span>
+        <button onclick="setQuickRoom('CLASS1')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-xs font-mono font-bold text-slate-700">CLASS1</button>
+        <button onclick="setQuickRoom('5-1')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-xs font-mono font-bold text-slate-700">5-1</button>
+        <button onclick="setQuickRoom('6-1')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-xs font-mono font-bold text-slate-700">6-1</button>
+        <button onclick="setQuickRoom('ZENKO')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-xs font-mono font-bold text-slate-700">ZENKO</button>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeRoomModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-sm font-bold">キャンセル</button>
+        <button onclick="applyRoomChange()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow">このルームに入る</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== リセット確認モーダル ==================== -->
+  <div id="resetConfirmModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-200 space-y-4">
+      <div class="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center text-xl mx-auto">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <div class="text-center space-y-1">
+        <h3 class="font-bold text-lg text-slate-900">回答データをリセットしますか？</h3>
+        <p class="text-xs sm:text-sm text-slate-500">現在のルームに集まった意見とシミュレーションデータがすべて消去されます。</p>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="closeResetConfirmModal()" class="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-sm font-bold">やめる</button>
+        <button onclick="confirmResetAllVotes()" class="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold shadow">リセット実行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 活用＆共有ガイドモーダル ==================== -->
+  <div id="guideModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[88vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="p-5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i class="fa-solid fa-book-open-reader text-xl"></i>
+          <h3 class="font-bold text-base sm:text-lg">授業での活用＆他校の先生への共有ガイド</h3>
+        </div>
+        <button onclick="closeGuideModal()" class="text-white/80 hover:text-white p-1"><i class="fa-solid fa-xmark text-xl"></i></button>
+      </div>
+      <div class="p-5 sm:p-6 overflow-y-auto space-y-5 text-sm text-slate-700 leading-relaxed">
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <h4 class="font-bold text-amber-900 flex items-center gap-2 mb-1">
+            <i class="fa-solid fa-lightbulb text-amber-500"></i>
+            分布図そのものが「次の追究の問い」を生む授業づくり
+          </h4>
+          <p class="text-xs sm:text-sm text-amber-800">
+            多数決で決めるのではなく、<strong>「なぜ右上に多く集まったのか？」「左下に置いた人の理由にはどんな大切な視点があるか？」</strong>を全体で見合うことで、少数意見も大切にした深い合意形成ができます。
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <div class="font-bold text-indigo-700 mb-1">🏫 40人規模（学級活動・総合）</div>
+            <ul class="text-xs space-y-1.5 text-slate-600 list-disc pl-4">
+              <li>最初は<strong>「名前: 非表示(匿名)」</strong>にしておくと、児童が安心して本音の場所をタップできます。</li>
+              <li>気になったドットをタップして理由を紹介し、対話のあとで再度自分のドットを動かすと<strong>「意見の変容（矢印）」</strong>が見えます。</li>
+            </ul>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <div class="font-bold text-rose-700 mb-1">🏟️ 500人規模（全校集会・生徒総会）</div>
+            <ul class="text-xs space-y-1.5 text-slate-600 list-disc pl-4">
+              <li><strong>「ヒートマップ(大人数用)」</strong>に切り替えると、全校児童・生徒500人の意見の集中エリアが一目で浮かび上がります。</li>
+              <li>「エリア別割合(%)」をONにすると、4象限それぞれの人数とパーセンテージがリアルタイム集計されます。</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="border-t border-slate-200 pt-4">
+          <h4 class="font-bold text-slate-900 mb-1.5 flex items-center gap-2">
+            <i class="fa-solid fa-share-nodes text-indigo-600"></i>
+            市内の他校の先生への配布・共有について
+          </h4>
+          <p class="text-xs sm:text-sm text-slate-600">
+            このアプリは<strong>1つのファイルにすべての機能が入っている</strong>ため、URLの共有やHTMLファイルの配布だけでどの学校のiPad・PC・電子黒板でもそのまま動作します。まずは「先生・設定」タブにある<strong>「40人 / 500人の意見を生成（シミュレーション）」</strong>ボタンを押していただくと、すぐに授業のイメージを体験していただけます。
+          </p>
+        </div>
+      </div>
+      <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+        <button onclick="closeGuideModal()" class="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm">とじる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== トースト通知 ==================== -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- ==================== アプリケーションスクリプト (Firebase & ロジック) ==================== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, deleteDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // ============================================================================
+    // アプリケーションの状態管理 (State)
+    // ============================================================================
+    const state = {
+      mode: 'student',             // 'student' | 'board' | 'teacher'
+      roomCode: 'CLASS1',
+      userId: 'local_' + Math.random().toString(36).substring(2, 10),
+      isCloudActive: false,
+      isFullscreen: false,
+
+      // 授業テーマ＆2軸ラベル設定
+      config: {
+        prompt: 'クラス目標「全員が毎日笑顔で過ごす」についてどう思う？',
+        topLabel: 'メリットが大きい',
+        bottomLabel: 'メリットが小さい・課題あり',
+        leftLabel: '実現がむずかしい',
+        rightLabel: '実現しやすい',
+        isLocked: false
+      },
+
+      // 児童・生徒の入力状態
+      studentPin: {
+        x: 20,                     // -100 〜 +100
+        y: 30,                     // -100 〜 +100
+        color: '#3b82f6',
+        hasSubmitted: false,
+        prevX: null,
+        prevY: null
+      },
+
+      // 全体ボードの表示オプション
+      boardOptions: {
+        visualMode: 'dots',        // 'dots' | 'heatmap' | 'both'
+        isAnonymous: true,         // 名前を隠すかどうか（初期は安心な匿名ON）
+        showQuadStats: true,       // 4象限の%表示
+        showAverage: false,        // 全体の重心表示
+        showTrails: true,          // 意見移動の矢印表示
+        quadrantFilter: 'ALL',     // 'ALL' | 'Q1' | 'Q2' | 'Q3' | 'Q4'
+        selectedVoteId: null       // タップして選択中のドットID
+      },
+
+      // 投票データ
+      cloudVotes: [],              // Firestoreから同期された投票
+      demoVotes: []                // シミュレーションまたはローカル投票
+    };
+
+    // 授業テンプレート定義
+    const TEMPLATES = [
+      {
+        prompt: '学級会で出た企画案について、あなたの考えに近い場所はどこ？',
+        topLabel: 'メリットが大きい',
+        bottomLabel: 'メリットが小さい・課題あり',
+        leftLabel: '実現がむずかしい',
+        rightLabel: '実現しやすい'
+      },
+      {
+        prompt: '私たちが取り組む探究テーマ、どんな価値や広がりがあるだろう？',
+        topLabel: '地域・社会にとって大切',
+        bottomLabel: '個人・自分たちにとって大切',
+        leftLabel: '将来じっくり取り組む',
+        rightLabel: '今すぐ始められる'
+      },
+      {
+        prompt: '今日のテーマについて、いまのあなたの立場と自信の度合いは？',
+        topLabel: '考えに自信がある',
+        bottomLabel: 'まだ迷っている・悩み中',
+        leftLabel: '反対・慎重派',
+        rightLabel: '賛成・推進派'
+      },
+      {
+        prompt: '来月の学校行事に向けて、いまの気持ちと準備の状況はどう？',
+        topLabel: 'とても楽しみ！',
+        bottomLabel: '少し不安・心配がある',
+        leftLabel: '準備はこれから',
+        rightLabel: '準備バッチリ！'
+      }
+    ];
+
+    // Firebase参照変数
+    let db = null;
+    let auth = null;
+    let currentUser = null;
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'positioning-map-edu';
+    let unsubVotes = null;
+    let unsubRoomConfig = null;
+
+    // ============================================================================
+    // 1. Firebase 初期化とリアルタイム同期 (RULE 1, 2, 3 完全準拠)
+    // ============================================================================
+    async function initCloudConnection() {
+      try {
+        if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+          updateSyncBadge(false, '単体動作モード');
+          return;
+        }
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        // RULE 3: Auth Before Queries
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+
+        onAuthStateChanged(auth, (user) => {
+          currentUser = user;
+          if (user) {
+            state.userId = user.uid;
+            state.isCloudActive = true;
+            updateSyncBadge(true, 'リアルタイム共有中');
+            setupFirestoreListeners();
+          }
+        });
+      } catch (err) {
+        console.warn('Standalone mode initialized:', err);
+        updateSyncBadge(false, '単体動作モード');
+      }
+    }
+
+    function setupFirestoreListeners() {
+      if (!currentUser || !db) return;
+
+      if (unsubVotes) unsubVotes();
+      if (unsubRoomConfig) unsubRoomConfig();
+
+      // RULE 1 & RULE 2: Strict Path & Simple Query (JS側でroomCodeフィルタリング)
+      const votesColRef = collection(db, 'artifacts', appId, 'public', 'data', 'posmap_votes');
+      unsubVotes = onSnapshot(votesColRef, (snapshot) => {
+        const list = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && data.roomCode === state.roomCode) {
+            list.push({ id: docSnap.id, ...data });
+          }
+        });
+        state.cloudVotes = list;
+
+        // 自分の既存投票があれば復元
+        const myDocId = `${state.roomCode}_${state.userId}`;
+        const myExisting = list.find(v => v.id === myDocId);
+        if (myExisting && !state.studentPin.hasSubmitted) {
+          state.studentPin.x = myExisting.x;
+          state.studentPin.y = myExisting.y;
+          state.studentPin.color = myExisting.color || '#3b82f6';
+          state.studentPin.hasSubmitted = true;
+          state.studentPin.prevX = myExisting.prevX ?? null;
+          state.studentPin.prevY = myExisting.prevY ?? null;
+          document.getElementById('studentNameInput').value = myExisting.name || '';
+          document.getElementById('studentReasonInput').value = myExisting.reason || '';
+          updateMyVoteUI();
+        }
+
+        updateAllViews();
+      }, (error) => {
+        console.error('Votes listener error:', error);
+      });
+
+      // ルーム設定の購読
+      const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'posmap_rooms', state.roomCode);
+      unsubRoomConfig = onSnapshot(roomDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          state.config = {
+            prompt: data.prompt || state.config.prompt,
+            topLabel: data.topLabel || state.config.topLabel,
+            bottomLabel: data.bottomLabel || state.config.bottomLabel,
+            leftLabel: data.leftLabel || state.config.leftLabel,
+            rightLabel: data.rightLabel || state.config.rightLabel,
+            isLocked: !!data.isLocked
+          };
+          applyConfigToUI();
+        }
+      }, (error) => {
+        console.error('Room config listener error:', error);
+      });
+    }
+
+    function updateSyncBadge(isOnline, text) {
+      const badge = document.getElementById('syncStatusBadge');
+      const label = document.getElementById('syncStatusText');
+      label.textContent = text;
+      if (isOnline) {
+        badge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1';
+      } else {
+        badge.className = 'text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1';
+      }
+    }
+
+    // 現在のルームの全投票リスト（クラウド＋ローカルデモをマージ）
+    function getAllActiveVotes() {
+      const map = new Map();
+      state.demoVotes.forEach(v => map.set(v.id, v));
+      state.cloudVotes.forEach(v => map.set(v.id, v));
+      return Array.from(map.values());
+    }
+
+    // ============================================================================
+    // 2. 児童・生徒の座標タップ・ドラッグ操作
+    // ============================================================================
+    const studentCanvas = document.getElementById('studentCanvas');
+    const stCtx = studentCanvas.getContext('2d');
+    let isDraggingStudentPin = false;
+
+    function setupStudentCanvasEvents() {
+      const handlePointer = (e) => {
+        if (state.config.isLocked) {
+          showToast('現在、先生が投票をストップしています', 'warning');
+          return;
+        }
+        const rect = studentCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        // キャンバス内の余白（パディング）を考慮して -100 〜 +100 に変換
+        const pad = rect.width * 0.08;
+        const innerW = rect.width - pad * 2;
+        const innerH = rect.height - pad * 2;
+
+        const normX = ((clientX - rect.left - pad) / innerW) * 200 - 100;
+        const normY = -(((clientY - rect.top - pad) / innerH) * 200 - 100);
+
+        state.studentPin.x = Math.max(-100, Math.min(100, Math.round(normX)));
+        state.studentPin.y = Math.max(-100, Math.min(100, Math.round(normY)));
+
+        updateStudentCoordInfo();
+        renderStudentCanvas();
+      };
+
+      studentCanvas.addEventListener('mousedown', (e) => {
+        isDraggingStudentPin = true;
+        handlePointer(e);
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (isDraggingStudentPin && state.mode === 'student') {
+          handlePointer(e);
+        }
+      });
+      window.addEventListener('mouseup', () => {
+        isDraggingStudentPin = false;
+      });
+
+      studentCanvas.addEventListener('touchstart', (e) => {
+        isDraggingStudentPin = true;
+        handlePointer(e);
+        e.preventDefault();
+      }, { passive: false });
+      studentCanvas.addEventListener('touchmove', (e) => {
+        if (isDraggingStudentPin) {
+          handlePointer(e);
+          e.preventDefault();
+        }
+      }, { passive: false });
+      studentCanvas.addEventListener('touchend', () => {
+        isDraggingStudentPin = false;
+      });
+    }
+
+    function updateStudentCoordInfo() {
+      const { x, y } = state.studentPin;
+      document.getElementById('stCoordX').textContent = x > 0 ? `+${x}` : x;
+      document.getElementById('stCoordY').textContent = y > 0 ? `+${y}` : y;
+      document.getElementById('studentPosLabel').textContent = `横 ${x > 0 ? '+' + x : x}, 縦 ${y > 0 ? '+' + y : y}`;
+
+      // 小中学生にわかりやすい言語化ラベル
+      let desc = '';
+      if (Math.abs(x) < 15 && Math.abs(y) < 15) {
+        desc = '真ん中付近（どちらともいえない・迷い中）';
+      } else {
+        const yText = y >= 15 ? `「${state.config.topLabel}」` : (y <= -15 ? `「${state.config.bottomLabel}」` : '縦は真ん中');
+        const xText = x >= 15 ? `「${state.config.rightLabel}」` : (x <= -15 ? `「${state.config.leftLabel}」` : '横は真ん中');
+        desc = `${yText} × ${xText}`;
+      }
+      document.getElementById('studentQuadrantDesc').textContent = desc;
+    }
+
+    function renderStudentCanvas() {
+      const rect = studentCanvas.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const dpr = window.devicePixelRatio || 1;
+      studentCanvas.width = rect.width * dpr;
+      studentCanvas.height = rect.height * dpr;
+      stCtx.save();
+      stCtx.scale(dpr, dpr);
+
+      const w = rect.width;
+      const h = rect.height;
+      const pad = w * 0.08;
+
+      // 背景と4象限の色分け描画
+      drawBaseCoordinateGrid(stCtx, w, h, pad, false);
+
+      // 前回送信位置（変容の軌跡）があれば薄く描画して矢印を引く
+      if (state.studentPin.prevX !== null && state.studentPin.prevY !== null) {
+        const p1 = coordToPixel(state.studentPin.prevX, state.studentPin.prevY, w, h, pad);
+        const p2 = coordToPixel(state.studentPin.x, state.studentPin.y, w, h, pad);
+
+        // 点線矢印
+        drawArrow(stCtx, p1.px, p1.py, p2.px, p2.py, '#94a3b8', 2, true);
+        stCtx.beginPath();
+        stCtx.arc(p1.px, p1.py, 7, 0, Math.PI * 2);
+        stCtx.fillStyle = '#cbd5e1';
+        stCtx.fill();
+        stCtx.strokeStyle = '#64748b';
+        stCtx.lineWidth = 1.5;
+        stCtx.stroke();
+
+        stCtx.font = 'bold 11px "Noto Sans JP", sans-serif';
+        stCtx.fillStyle = '#64748b';
+        stCtx.textAlign = 'center';
+        stCtx.fillText('前の位置', p1.px, p1.py - 12);
+      }
+
+      // 現在の自分のドットを描画
+      const cur = coordToPixel(state.studentPin.x, state.studentPin.y, w, h, pad);
+
+      // ガイド破線
+      stCtx.save();
+      stCtx.setLineDash([4, 4]);
+      stCtx.strokeStyle = state.studentPin.color + '88';
+      stCtx.lineWidth = 1.5;
+      stCtx.beginPath();
+      stCtx.moveTo(cur.px, h / 2);
+      stCtx.lineTo(cur.px, cur.py);
+      stCtx.moveTo(w / 2, cur.py);
+      stCtx.lineTo(cur.px, cur.py);
+      stCtx.stroke();
+      stCtx.restore();
+
+      // 外側の光彩リング
+      stCtx.beginPath();
+      stCtx.arc(cur.px, cur.py, 22, 0, Math.PI * 2);
+      stCtx.fillStyle = state.studentPin.color + '28';
+      stCtx.fill();
+
+      // メインのピン丸
+      stCtx.beginPath();
+      stCtx.arc(cur.px, cur.py, 13, 0, Math.PI * 2);
+      stCtx.fillStyle = state.studentPin.color;
+      stCtx.fill();
+      stCtx.lineWidth = 3.5;
+      stCtx.strokeStyle = '#ffffff';
+      stCtx.stroke();
+
+      // 中心点
+      stCtx.beginPath();
+      stCtx.arc(cur.px, cur.py, 4, 0, Math.PI * 2);
+      stCtx.fillStyle = '#ffffff';
+      stCtx.fill();
+
+      // 「あなた」ラベル
+      stCtx.font = 'bold 12px "Noto Sans JP", sans-serif';
+      stCtx.fillStyle = '#1e293b';
+      stCtx.textAlign = 'center';
+      stCtx.fillText('あなたの位置', cur.px, cur.py - 20);
+
+      stCtx.restore();
+    }
+
+    // 児童の意見送信
+    window.submitStudentVote = async function () {
+      if (state.config.isLocked) {
+        showToast('現在、先生が投票をストップしています', 'warning');
+        return;
+      }
+
+      const nameInput = document.getElementById('studentNameInput').value.trim();
+      const reasonInput = document.getElementById('studentReasonInput').value.trim();
+      const voterName = nameInput || '名無しのメンバー';
+
+      const docId = `${state.roomCode}_${state.userId}`;
+      const existingVote = getAllActiveVotes().find(v => v.id === docId);
+
+      // 既に送信済みで位置が変わった場合は前回の位置を記録（意見の変容機能）
+      let prevX = state.studentPin.prevX;
+      let prevY = state.studentPin.prevY;
+      if (existingVote && (existingVote.x !== state.studentPin.x || existingVote.y !== state.studentPin.y)) {
+        prevX = existingVote.x;
+        prevY = existingVote.y;
+        state.studentPin.prevX = prevX;
+        state.studentPin.prevY = prevY;
+      }
+
+      const votePayload = {
+        id: docId,
+        roomCode: state.roomCode,
+        userId: state.userId,
+        name: voterName,
+        reason: reasonInput || '（理由の記入なし）',
+        x: state.studentPin.x,
+        y: state.studentPin.y,
+        prevX: prevX,
+        prevY: prevY,
+        color: state.studentPin.color,
+        updatedAt: Date.now()
+      };
+
+      state.studentPin.hasSubmitted = true;
+
+      // ローカルにも即座に反映
+      const idx = state.demoVotes.findIndex(v => v.id === docId);
+      if (idx >= 0) {
+        state.demoVotes[idx] = votePayload;
+      } else {
+        state.demoVotes.push(votePayload);
+      }
+
+      updateMyVoteUI();
+      updateAllViews();
+
+      // Firestoreが有効ならクラウド保存
+      if (state.isCloudActive && currentUser && db) {
+        try {
+          const voteDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'posmap_votes', docId);
+          await setDoc(voteDocRef, votePayload);
+        } catch (err) {
+          console.error('Failed to save vote to cloud:', err);
+        }
+      }
+
+      showToast('マップにあなたの意見をおくりました！', 'success');
+    };
+
+    function updateMyVoteUI() {
+      const badge = document.getElementById('myVoteStatusBadge');
+      const btnText = document.getElementById('submitVoteBtnText');
+      if (state.studentPin.hasSubmitted) {
+        badge.textContent = '✓ 送信ずみ（変更もできます）';
+        badge.className = 'text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700';
+        btnText.textContent = '位置や理由を更新する';
+      } else {
+        badge.textContent = '未送信';
+        badge.className = 'text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600';
+        btnText.textContent = 'この位置で意見をおくる';
+      }
+    }
+
+    window.selectDotColor = function (colorHex) {
+      state.studentPin.color = colorHex;
+      document.querySelectorAll('.color-btn').forEach(btn => {
+        if (btn.dataset.color === colorHex) {
+          btn.classList.add('ring-4', 'ring-offset-2', 'ring-indigo-400');
+          btn.innerHTML = '<i class="fa-solid fa-check text-xs"></i>';
+        } else {
+          btn.classList.remove('ring-4', 'ring-offset-2', 'ring-indigo-400', 'ring-blue-400');
+          btn.innerHTML = '';
+        }
+      });
+      renderStudentCanvas();
+    };
+
+    window.resetStudentPinCenter = function () {
+      state.studentPin.x = 0;
+      state.studentPin.y = 0;
+      updateStudentCoordInfo();
+      renderStudentCanvas();
+    };
+
+    // ============================================================================
+    // 3. 全体・先生モード（みんなの分布・500人対応ヒートマップ・ヒットテスト）
+    // ============================================================================
+    const boardCanvas = document.getElementById('boardCanvas');
+    const bdCtx = boardCanvas.getContext('2d');
+
+    function setupBoardCanvasEvents() {
+      const handleBoardTap = (e) => {
+        const rect = boardCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const tapX = clientX - rect.left;
+        const tapY = clientY - rect.top;
+
+        const pad = rect.width * 0.08;
+        const votes = getFilteredVotes();
+
+        // タップ位置に最も近いドットを探す（半径22px以内）
+        let closestVote = null;
+        let minDist = 22;
+
+        for (let i = votes.length - 1; i >= 0; i--) {
+          const v = votes[i];
+          const { px, py } = coordToPixel(v.x, v.y, rect.width, rect.height, pad);
+          const dist = Math.hypot(px - tapX, py - tapY);
+          if (dist < minDist) {
+            minDist = dist;
+            closestVote = v;
+          }
+        }
+
+        if (closestVote) {
+          selectVoteOnBoard(closestVote.id);
+        } else {
+          closeSelectedVotePopup();
+        }
+      };
+
+      boardCanvas.addEventListener('click', handleBoardTap);
+      boardCanvas.addEventListener('touchend', (e) => {
+        if (e.changedTouches && e.changedTouches.length > 0) {
+          const touch = e.changedTouches[0];
+          handleBoardTap({ clientX: touch.clientX, clientY: touch.clientY });
+        }
+      });
+    }
+
+    function getFilteredVotes() {
+      const all = getAllActiveVotes();
+      const qf = state.boardOptions.quadrantFilter;
+      const keyword = (document.getElementById('reasonSearchInput')?.value || '').trim().toLowerCase();
+
+      return all.filter((v, idx) => {
+        // 象限フィルター
+        if (qf === 'Q1' && !(v.x >= 0 && v.y >= 0)) return false;
+        if (qf === 'Q2' && !(v.x < 0 && v.y >= 0)) return false;
+        if (qf === 'Q3' && !(v.x < 0 && v.y < 0)) return false;
+        if (qf === 'Q4' && !(v.x >= 0 && v.y < 0)) return false;
+
+        // 検索フィルター
+        if (keyword) {
+          const dispName = state.boardOptions.isAnonymous ? `回答者 #${idx + 1}` : (v.name || '');
+          const matchName = dispName.toLowerCase().includes(keyword);
+          const matchReason = (v.reason || '').toLowerCase().includes(keyword);
+          if (!matchName && !matchReason) return false;
+        }
+        return true;
+      });
+    }
+
+    window.renderBoard = function () {
+      const allVotes = getAllActiveVotes();
+      const filteredVotes = getFilteredVotes();
+
+      // カウント更新
+      document.getElementById('headerCountBadge').textContent = allVotes.length;
+      document.getElementById('boardTotalCount').textContent = allVotes.length;
+      document.getElementById('filteredCountLabel').textContent = `${filteredVotes.length}件を表示中`;
+
+      renderBoardCanvas(allVotes, filteredVotes);
+      renderOpinionsList(filteredVotes, allVotes);
+    };
+
+    function renderBoardCanvas(allVotes, filteredVotes) {
+      const rect = boardCanvas.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const dpr = window.devicePixelRatio || 1;
+      boardCanvas.width = rect.width * dpr;
+      boardCanvas.height = rect.height * dpr;
+      bdCtx.save();
+      bdCtx.scale(dpr, dpr);
+
+      const w = rect.width;
+      const h = rect.height;
+      const pad = w * 0.08;
+
+      // 1. ベース座標グリッド
+      drawBaseCoordinateGrid(bdCtx, w, h, pad, true);
+
+      // 2. ヒートマップ描画 ('heatmap' または 'both' の場合)
+      const visMode = state.boardOptions.visualMode;
+      if ((visMode === 'heatmap' || visMode === 'both') && filteredVotes.length > 0) {
+        drawHeatmapLayer(bdCtx, filteredVotes, w, h, pad);
+      }
+
+      // 3. 4象限の割合(%)と人数バッジ表示
+      if (state.boardOptions.showQuadStats) {
+        drawQuadrantStatsOverlay(bdCtx, allVotes, w, h, pad);
+      }
+
+      // 4. 意見移動の軌跡（矢印）表示
+      if (state.boardOptions.showTrails && visMode !== 'heatmap') {
+        filteredVotes.forEach(v => {
+          if (v.prevX !== undefined && v.prevX !== null && v.prevY !== undefined && v.prevY !== null) {
+            const p1 = coordToPixel(v.prevX, v.prevY, w, h, pad);
+            const p2 = coordToPixel(v.x, v.y, w, h, pad);
+            drawArrow(bdCtx, p1.px, p1.py, p2.px, p2.py, '#6366f1', 1.8, false);
+          }
+        });
+      }
+
+      // 5. ドット描画 ('dots' または 'both' の場合)
+      if (visMode === 'dots' || visMode === 'both') {
+        // 人数に応じてドットサイズと不透明度を自動最適化（40人でも500人でも見やすく）
+        const count = filteredVotes.length;
+        const radius = count > 200 ? 5.5 : (count > 80 ? 7.5 : 10);
+        const alpha = visMode === 'both' ? 0.75 : (count > 200 ? 0.65 : 0.9);
+
+        filteredVotes.forEach((v, idx) => {
+          const { px, py } = coordToPixel(v.x, v.y, w, h, pad);
+          const isSelected = v.id === state.boardOptions.selectedVoteId;
+
+          bdCtx.save();
+          bdCtx.beginPath();
+          bdCtx.arc(px, py, isSelected ? radius + 5 : radius, 0, Math.PI * 2);
+          bdCtx.fillStyle = v.color || '#3b82f6';
+          bdCtx.globalAlpha = isSelected ? 1.0 : alpha;
+          bdCtx.fill();
+
+          bdCtx.lineWidth = isSelected ? 3.5 : (count > 200 ? 1 : 2);
+          bdCtx.strokeStyle = isSelected ? '#0f172a' : '#ffffff';
+          bdCtx.stroke();
+
+          // 40人規模以下かつ匿名OFFの場合はドットの上に小さく名前を表示
+          if (!state.boardOptions.isAnonymous && count <= 45) {
+            bdCtx.globalAlpha = 1.0;
+            bdCtx.font = 'bold 10px "Noto Sans JP", sans-serif';
+            bdCtx.fillStyle = '#1e293b';
+            bdCtx.textAlign = 'center';
+            const shortName = (v.name || '').substring(0, 6);
+            bdCtx.fillText(shortName, px, py - radius - 4);
+          }
+          bdCtx.restore();
+        });
+      }
+
+      // 6. 全体の重心（平均位置）マーカー
+      if (state.boardOptions.showAverage && allVotes.length > 0) {
+        const avgX = allVotes.reduce((s, v) => s + v.x, 0) / allVotes.length;
+        const avgY = allVotes.reduce((s, v) => s + v.y, 0) / allVotes.length;
+        const { px, py } = coordToPixel(avgX, avgY, w, h, pad);
+
+        bdCtx.save();
+        bdCtx.beginPath();
+        bdCtx.arc(px, py, 16, 0, Math.PI * 2);
+        bdCtx.fillStyle = 'rgba(244, 63, 94, 0.22)';
+        bdCtx.fill();
+
+        bdCtx.strokeStyle = '#e11d48';
+        bdCtx.lineWidth = 2.5;
+        bdCtx.beginPath();
+        bdCtx.arc(px, py, 9, 0, Math.PI * 2);
+        bdCtx.stroke();
+
+        bdCtx.beginPath();
+        bdCtx.moveTo(px - 14, py);
+        bdCtx.lineTo(px + 14, py);
+        bdCtx.moveTo(px, py - 14);
+        bdCtx.lineTo(px, py + 14);
+        bdCtx.stroke();
+
+        bdCtx.font = 'bold 11px "Noto Sans JP", sans-serif';
+        bdCtx.fillStyle = '#be123c';
+        bdCtx.textAlign = 'center';
+        bdCtx.fillText(`全体の重心 (${Math.round(avgX)}, ${Math.round(avgY)})`, px, py - 16);
+        bdCtx.restore();
+      }
+
+      bdCtx.restore();
+    }
+
+    // 500人集会でも高速・美麗に描画できるCanvasヒートマップ処理
+    function drawHeatmapLayer(ctx, votes, w, h, pad) {
+      const offCanvas = document.createElement('canvas');
+      const scale = 0.5; // 高速化のため半分解像度で計算
+      const ow = Math.max(1, Math.floor(w * scale));
+      const oh = Math.max(1, Math.floor(h * scale));
+      offCanvas.width = ow;
+      offCanvas.height = oh;
+      const oCtx = offCanvas.getContext('2d');
+
+      const count = votes.length;
+      const radius = (w * scale) * (count > 200 ? 0.09 : 0.13);
+      // 1点あたりのアルファ強度を人数に応じて自動調整
+      const intensity = count > 300 ? 0.06 : (count > 100 ? 0.12 : 0.25);
+
+      votes.forEach(v => {
+        const { px, py } = coordToPixel(v.x, v.y, w, h, pad);
+        const cx = px * scale;
+        const cy = py * scale;
+
+        const grad = oCtx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+        grad.addColorStop(0, `rgba(0, 0, 0, ${intensity})`);
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+        oCtx.fillStyle = grad;
+        oCtx.beginPath();
+        oCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+        oCtx.fill();
+      });
+
+      // アルファ値をカラーマップ（青→水色→緑→黄→赤）に変換
+      const imgData = oCtx.getImageData(0, 0, ow, oh);
+      const data = imgData.data;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const alpha = data[i + 3]; // 0 - 255
+        if (alpha > 8) {
+          const norm = Math.min(1, alpha / 220);
+          const rgb = getHeatmapColor(norm);
+          data[i] = rgb[0];
+          data[i + 1] = rgb[1];
+          data[i + 2] = rgb[2];
+          data[i + 3] = Math.min(215, Math.floor(norm * 240 + 30));
+        } else {
+          data[i + 3] = 0;
+        }
+      }
+      oCtx.putImageData(imgData, 0, 0);
+
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(offCanvas, 0, 0, ow, oh, 0, 0, w, h);
+      ctx.restore();
+    }
+
+    function getHeatmapColor(value) {
+      // 0.0(青) -> 0.35(シアン/緑) -> 0.7(黄) -> 1.0(赤)
+      if (value < 0.33) {
+        const t = value / 0.33;
+        return [Math.round(59 * (1 - t) + 16 * t), Math.round(130 * (1 - t) + 185 * t), Math.round(246 * (1 - t) + 129 * t)];
+      } else if (value < 0.66) {
+        const t = (value - 0.33) / 0.33;
+        return [Math.round(16 * (1 - t) + 245 * t), Math.round(185 * (1 - t) + 158 * t), Math.round(129 * (1 - t) + 11 * t)];
+      } else {
+        const t = (value - 0.66) / 0.34;
+        return [Math.round(245 * (1 - t) + 239 * t), Math.round(158 * (1 - t) + 68 * t), Math.round(11 * (1 - t) + 68 * t)];
+      }
+    }
+
+    // 4象限の人数と割合(%)をマップの四隅に描画
+    function drawQuadrantStatsOverlay(ctx, votes, w, h, pad) {
+      const total = votes.length;
+      let q1 = 0, q2 = 0, q3 = 0, q4 = 0;
+      votes.forEach(v => {
+        if (v.x >= 0 && v.y >= 0) q1++;
+        else if (v.x < 0 && v.y >= 0) q2++;
+        else if (v.x < 0 && v.y < 0) q3++;
+        else q4++;
+      });
+
+      const pct = (n) => total === 0 ? '0%' : `${Math.round((n / total) * 100)}%`;
+
+      const boxes = [
+        { label: '右上', count: q1, pct: pct(q1), x: w - pad - 8, y: pad + 22, align: 'right', color: '#059669' },
+        { label: '左上', count: q2, pct: pct(q2), x: pad + 8, y: pad + 22, align: 'left', color: '#d97706' },
+        { label: '左下', count: q3, pct: pct(q3), x: pad + 8, y: h - pad - 12, align: 'left', color: '#475569' },
+        { label: '右下', count: q4, pct: pct(q4), x: w - pad - 8, y: h - pad - 12, align: 'right', color: '#2563eb' }
+      ];
+
+      ctx.save();
+      boxes.forEach(b => {
+        ctx.font = 'bold 12px "Noto Sans JP", sans-serif';
+        ctx.textAlign = b.align;
+        ctx.fillStyle = b.color;
+        ctx.fillText(`${b.label}: ${b.count}人 (${b.pct})`, b.x, b.y);
+      });
+      ctx.restore();
+    }
+
+    // 共通：2軸座標グリッドの背景描画
+    function drawBaseCoordinateGrid(ctx, w, h, pad, isBoard) {
+      ctx.clearRect(0, 0, w, h);
+
+      const innerW = w - pad * 2;
+      const innerH = h - pad * 2;
+      const cx = w / 2;
+      const cy = h / 2;
+
+      // 4象限の淡い背景色
+      // 右上 (Q1)
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.045)';
+      ctx.fillRect(cx, pad, innerW / 2, innerH / 2);
+      // 左上 (Q2)
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.045)';
+      ctx.fillRect(pad, pad, innerW / 2, innerH / 2);
+      // 左下 (Q3)
+      ctx.fillStyle = 'rgba(100, 116, 139, 0.045)';
+      ctx.fillRect(pad, cy, innerW / 2, innerH / 2);
+      // 右下 (Q4)
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.045)';
+      ctx.fillRect(cx, cy, innerW / 2, innerH / 2);
+
+      // サブグリッド線 (25%, 50%, 75%)
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      [-50, 50].forEach(val => {
+        const p = coordToPixel(val, val, w, h, pad);
+        ctx.beginPath();
+        ctx.moveTo(p.px, pad);
+        ctx.lineTo(p.px, h - pad);
+        ctx.moveTo(pad, p.py);
+        ctx.lineTo(w - pad, p.py);
+        ctx.stroke();
+      });
+
+      // 外枠
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(pad, pad, innerW, innerH);
+
+      // メインのX軸・Y軸
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, pad);
+      ctx.lineTo(cx, h - pad);
+      ctx.moveTo(pad, cy);
+      ctx.lineTo(w - pad, cy);
+      ctx.stroke();
+
+      // 中心の0マーク
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#64748b';
+      ctx.fill();
+    }
+
+    // 座標 (-100〜+100) から Canvasピクセルへの変換
+    function coordToPixel(x, y, w, h, pad) {
+      const innerW = w - pad * 2;
+      const innerH = h - pad * 2;
+      const px = pad + ((x + 100) / 200) * innerW;
+      const py = pad + ((100 - y) / 200) * innerH;
+      return { px, py };
+    }
+
+    // 矢印描画ヘルパー
+    function drawArrow(ctx, x1, y1, x2, y2, color, width, dashed) {
+      const headlen = 8;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 6) return;
+      const angle = Math.atan2(dy, dx);
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = width;
+      if (dashed) ctx.setLineDash([4, 3]);
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 右側の意見一覧カードの描画
+    function renderOpinionsList(filteredVotes, allVotes) {
+      const container = document.getElementById('opinionsListContainer');
+      if (filteredVotes.length === 0) {
+        container.innerHTML = `
+          <div class="h-48 flex flex-col items-center justify-center text-center text-slate-400 p-4">
+            <i class="fa-regular fa-comment-dots text-3xl mb-2"></i>
+            <p class="text-xs sm:text-sm font-bold">まだこのエリアに意見がありません</p>
+            <p class="text-xs mt-1">児童・生徒がタップするか、「先生・設定」からシミュレーションを実行すると表示されます</p>
+          </div>
+        `;
+        return;
+      }
+
+      // 表示負荷対策として最大120件までリスト表示（500人時は先頭120件＋案内）
+      const displaySlice = filteredVotes.slice(0, 120);
+
+      container.innerHTML = displaySlice.map((v, i) => {
+        const globalIdx = allVotes.findIndex(item => item.id === v.id) + 1;
+        const displayName = state.boardOptions.isAnonymous ? `回答者 #${globalIdx}` : escapeHtml(v.name || `回答者 #${globalIdx}`);
+        const isSelected = v.id === state.boardOptions.selectedVoteId;
+        const quadBadge = getQuadrantBadgeHtml(v.x, v.y);
+        const shiftedBadge = (v.prevX !== null && v.prevX !== undefined)
+          ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-200">移動あり</span>`
+          : '';
+
+        return `
+          <div onclick="selectVoteOnBoard('${v.id}')"
+            class="p-3 rounded-xl border transition cursor-pointer ${isSelected ? 'bg-indigo-50/70 border-indigo-500 ring-2 ring-indigo-200' : 'bg-slate-50/70 hover:bg-slate-100 border-slate-200'}">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full shrink-0" style="background-color: ${v.color || '#3b82f6'}"></span>
+                <span class="font-bold text-xs sm:text-sm text-slate-800">${displayName}</span>
+                ${shiftedBadge}
+              </div>
+              <div class="flex items-center gap-1.5">
+                ${quadBadge}
+                <span class="text-[11px] font-mono text-slate-400">(${v.x > 0 ? '+' + v.x : v.x}, ${v.y > 0 ? '+' + v.y : v.y})</span>
+              </div>
+            </div>
+            <p class="text-xs sm:text-sm text-slate-700 leading-relaxed pl-5">${escapeHtml(v.reason || '')}</p>
+          </div>
+        `;
+      }).join('') + (filteredVotes.length > 120 ? `
+        <div class="text-center py-2 text-xs text-slate-400 font-semibold">
+          他 ${filteredVotes.length - 120} 件（エリア絞り込みや検索で詳しく見られます）
+        </div>
+      ` : '');
+    }
+
+    function getQuadrantBadgeHtml(x, y) {
+      if (x >= 0 && y >= 0) return '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">↗ 右上</span>';
+      if (x < 0 && y >= 0) return '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">↖ 左上</span>';
+      if (x < 0 && y < 0) return '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">↙ 左下</span>';
+      return '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">↘ 右下</span>';
+    }
+
+    // ドットまたはリスト選択時のポップアップ表示
+    window.selectVoteOnBoard = function (voteId) {
+      state.boardOptions.selectedVoteId = voteId;
+      const allVotes = getAllActiveVotes();
+      const idx = allVotes.findIndex(v => v.id === voteId);
+      const vote = allVotes[idx];
+
+      if (!vote) {
+        closeSelectedVotePopup();
+        return;
+      }
+
+      const popup = document.getElementById('selectedVotePopup');
+      const dispName = state.boardOptions.isAnonymous ? `回答者 #${idx + 1}` : (vote.name || `回答者 #${idx + 1}`);
+      document.getElementById('popupColorDot').style.backgroundColor = vote.color || '#3b82f6';
+      document.getElementById('popupVoterName').textContent = dispName;
+      document.getElementById('popupCoords').textContent = `(横:${vote.x > 0 ? '+' + vote.x : vote.x}, 縦:${vote.y > 0 ? '+' + vote.y : vote.y})`;
+      document.getElementById('popupReasonText').textContent = vote.reason || '（理由の記入なし）';
+      popup.classList.remove('hidden');
+
+      renderBoard();
+    };
+
+    window.closeSelectedVotePopup = function () {
+      state.boardOptions.selectedVoteId = null;
+      document.getElementById('selectedVotePopup').classList.add('hidden');
+      renderBoard();
+    };
+
+    // ボードの各種切替アクション
+    window.setVisualMode = function (mode) {
+      state.boardOptions.visualMode = mode;
+      const modes = [
+        { id: 'visBtnDots', key: 'dots' },
+        { id: 'visBtnHeatmap', key: 'heatmap' },
+        { id: 'visBtnBoth', key: 'both' }
+      ];
+      modes.forEach(m => {
+        const el = document.getElementById(m.id);
+        if (m.key === mode) {
+          el.className = 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-white text-indigo-700 shadow-sm';
+        } else {
+          el.className = 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+        }
+      });
+      renderBoard();
+    };
+
+    window.toggleAnonymousMode = function () {
+      state.boardOptions.isAnonymous = !state.boardOptions.isAnonymous;
+      const btn = document.getElementById('btnAnonymous');
+      const txt = document.getElementById('anonymousBtnText');
+      if (state.boardOptions.isAnonymous) {
+        btn.className = 'px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-amber-50 border-amber-300 text-amber-800';
+        txt.textContent = '名前: 非表示(匿名)';
+      } else {
+        btn.className = 'px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-emerald-50 border-emerald-300 text-emerald-800';
+        txt.textContent = '名前: 表示中';
+      }
+      if (state.boardOptions.selectedVoteId) {
+        selectVoteOnBoard(state.boardOptions.selectedVoteId);
+      }
+      renderBoard();
+    };
+
+    window.toggleQuadrantStats = function () {
+      state.boardOptions.showQuadStats = !state.boardOptions.showQuadStats;
+      const btn = document.getElementById('btnQuadStats');
+      btn.className = state.boardOptions.showQuadStats
+        ? 'px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-indigo-50 border-indigo-200 text-indigo-700'
+        : 'px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-slate-100 border-slate-200 text-slate-600';
+      renderBoard();
+    };
+
+    window.toggleAveragePin = function () {
+      state.boardOptions.showAverage = !state.boardOptions.showAverage;
+      const btn = document.getElementById('btnAvgPin');
+      btn.className = state.boardOptions.showAverage
+        ? 'px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700'
+        : 'px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-slate-100 border-slate-200 text-slate-600';
+      renderBoard();
+    };
+
+    window.toggleTrailArrows = function () {
+      state.boardOptions.showTrails = !state.boardOptions.showTrails;
+      const btn = document.getElementById('btnTrails');
+      btn.className = state.boardOptions.showTrails
+        ? 'px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-indigo-50 border-indigo-200 text-indigo-700'
+        : 'px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-slate-100 border-slate-200 text-slate-600';
+      renderBoard();
+    };
+
+    window.setQuadrantFilter = function (qf) {
+      state.boardOptions.quadrantFilter = qf;
+      ['ALL', 'Q1', 'Q2', 'Q3', 'Q4'].forEach(key => {
+        const btn = document.getElementById('qf_' + key);
+        if (key === qf) {
+          btn.className = 'quad-filter-btn py-2 px-1 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-sm transition text-center';
+        } else {
+          btn.className = 'quad-filter-btn py-2 px-1 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition text-center';
+        }
+      });
+      renderBoard();
+    };
+
+    // ============================================================================
+    // 4. 先生メニュー（設定・40人/500人シミュレーション・CSV/画像出力）
+    // ============================================================================
+    window.applyTemplate = function (index) {
+      const t = TEMPLATES[index];
+      if (!t) return;
+      document.getElementById('cfgPromptInput').value = t.prompt;
+      document.getElementById('cfgTopInput').value = t.topLabel;
+      document.getElementById('cfgBottomInput').value = t.bottomLabel;
+      document.getElementById('cfgLeftInput').value = t.leftLabel;
+      document.getElementById('cfgRightInput').value = t.rightLabel;
+      saveTeacherConfig();
+    };
+
+    window.saveTeacherConfig = async function () {
+      state.config.prompt = document.getElementById('cfgPromptInput').value.trim() || '今日のテーマ';
+      state.config.topLabel = document.getElementById('cfgTopInput').value.trim() || '上';
+      state.config.bottomLabel = document.getElementById('cfgBottomInput').value.trim() || '下';
+      state.config.leftLabel = document.getElementById('cfgLeftInput').value.trim() || '左';
+      state.config.rightLabel = document.getElementById('cfgRightInput').value.trim() || '右';
+
+      applyConfigToUI();
+
+      if (state.isCloudActive && currentUser && db) {
+        try {
+          const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'posmap_rooms', state.roomCode);
+          await setDoc(roomDocRef, { ...state.config, updatedAt: Date.now() });
+        } catch (err) {
+          console.error('Failed to save room config:', err);
+        }
+      }
+      showToast('テーマと軸ラベルを全体に反映しました！', 'success');
+    };
+
+    window.toggleVotingLock = async function () {
+      state.config.isLocked = !state.config.isLocked;
+      applyConfigToUI();
+      if (state.isCloudActive && currentUser && db) {
+        try {
+          const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'posmap_rooms', state.roomCode);
+          await setDoc(roomDocRef, { ...state.config, updatedAt: Date.now() });
+        } catch (err) {
+          console.error(err);
+        }
+      }
+      showToast(state.config.isLocked ? '児童の投票をストップしました' : '投票の受付を再開しました', 'info');
+    };
+
+    function applyConfigToUI() {
+      const c = state.config;
+      document.getElementById('bannerPromptText').textContent = c.prompt;
+
+      // 児童画面と全体画面の軸ラベル更新
+      document.getElementById('stLabelTop').textContent = c.topLabel;
+      document.getElementById('stLabelBottom').textContent = c.bottomLabel;
+      document.getElementById('stLabelLeft').textContent = c.leftLabel;
+      document.getElementById('stLabelRight').textContent = c.rightLabel;
+
+      document.getElementById('bdLabelTop').textContent = c.topLabel;
+      document.getElementById('bdLabelBottom').textContent = c.bottomLabel;
+      document.getElementById('bdLabelLeft').textContent = c.leftLabel;
+      document.getElementById('bdLabelRight').textContent = c.rightLabel;
+
+      // 先生フォーム同期
+      document.getElementById('cfgPromptInput').value = c.prompt;
+      document.getElementById('cfgTopInput').value = c.topLabel;
+      document.getElementById('cfgBottomInput').value = c.bottomLabel;
+      document.getElementById('cfgLeftInput').value = c.leftLabel;
+      document.getElementById('cfgRightInput').value = c.rightLabel;
+
+      // ロック状態表示
+      const lockBadge = document.getElementById('lockStatusBadge');
+      const lockBtn = document.getElementById('btnLockVoting');
+      if (c.isLocked) {
+        lockBadge.classList.remove('hidden');
+        lockBadge.classList.add('flex');
+        lockBtn.innerHTML = '<i class="fa-solid fa-lock text-rose-600"></i><span>現在：投票ストップ中（タップで解除）</span>';
+      } else {
+        lockBadge.classList.add('hidden');
+        lockBadge.classList.remove('flex');
+        lockBtn.innerHTML = '<i class="fa-solid fa-lock-open text-emerald-600"></i><span>現在：投票を受付中（タップでロック）</span>';
+      }
+
+      updateStudentCoordInfo();
+      updateAllViews();
+    }
+
+    // リアルな小中学生のサンプル意見を生成（40人クラス / 500人全校集会）
+    window.generateSimulationData = function (count) {
+      const sampleReasonsQ1 = [
+        'みんなが楽しくなるし、すぐ今日から意識して始められるから！',
+        'クラス全員で声をかけ合えば絶対に実現できると思う。',
+        'メリットがとても大きいし、係活動と組み合わせれば簡単そう。',
+        '毎日が楽しくなるから賛成！まずは挨拶から始めたい。',
+        '去年も似た取り組みをしてうまくいった経験があるから。'
+      ];
+      const sampleReasonsQ2 = [
+        'すごく良い目標だけど、全員が毎日続けるには工夫が必要だと思う。',
+        '実現できたら最高だけど、元気がない日の人への配慮も考えたい。',
+        'メリットは大きいけれど、具体的なルール決めが難しそう。',
+        '理想としては賛成だけど、時間がかかるかもしれない。'
+      ];
+      const sampleReasonsQ3 = [
+        '少し目標が大きすぎて、どうやって確かめるのかが難しいと思う。',
+        '人によって笑顔の基準が違うから、無理強いにならないか心配。',
+        'もっと具体的で小さな目標にした方が振り返りやすいと思う。'
+      ];
+      const sampleReasonsQ4 = [
+        '簡単にできることだけど、それだけでクラスが良くなるかはまだ分からない。',
+        '取り組みやすいけれど、もっと他に優先したい課題がある気もする。',
+        '実現はできそうだけど、形だけにならないようにしたい。'
+      ];
+
+      const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+      const generated = [];
+
+      // 授業で議論が盛り上がるリアルな分布（右上に60%、左上に22%、右下に10%、左下に少数意見8%）
+      for (let i = 1; i <= count; i++) {
+        const r = Math.random();
+        let x, y, reasonPool;
+
+        if (r < 0.58) {
+          // 右上 (Q1: 多数派クラスター)
+          x = Math.round(gaussianRandom(48, 25));
+          y = Math.round(gaussianRandom(52, 24));
+          reasonPool = sampleReasonsQ1;
+        } else if (r < 0.82) {
+          // 左上 (Q2: メリット大だが難しい派)
+          x = Math.round(gaussianRandom(-45, 24));
+          y = Math.round(gaussianRandom(45, 25));
+          reasonPool = sampleReasonsQ2;
+        } else if (r < 0.92) {
+          // 右下 (Q4)
+          x = Math.round(gaussianRandom(40, 22));
+          y = Math.round(gaussianRandom(-38, 22));
+          reasonPool = sampleReasonsQ4;
+        } else {
+          // 左下 (Q3: 鋭い少数意見)
+          x = Math.round(gaussianRandom(-52, 20));
+          y = Math.round(gaussianRandom(-48, 20));
+          reasonPool = sampleReasonsQ3;
+        }
+
+        x = Math.max(-96, Math.min(96, x));
+        y = Math.max(-96, Math.min(96, y));
+
+        const reason = reasonPool[i % reasonPool.length];
+        generated.push({
+          id: `sim_${i}`,
+          roomCode: state.roomCode,
+          userId: `sim_user_${i}`,
+          name: `${(i % 6) + 1}班 ${i}番`,
+          reason: reason,
+          x: x,
+          y: y,
+          prevX: null,
+          prevY: null,
+          color: colors[i % colors.length],
+          updatedAt: Date.now() - i * 1000
+        });
+      }
+
+      state.demoVotes = generated;
+
+      // 500人の場合はヒートマップ重ね合わせを自動でONにして見やすくする
+      if (count >= 200) {
+        setVisualMode('both');
+      } else {
+        setVisualMode('dots');
+      }
+
+      switchMode('board');
+      showToast(`${count}人分のリアルな分布データを生成しました！`, 'success');
+    };
+
+    // 話し合い後の「意見の移動（変容）」をシミュレート
+    window.simulateOpinionShift = function () {
+      if (state.demoVotes.length === 0) {
+        generateSimulationData(40);
+      }
+      let movedCount = 0;
+      state.demoVotes = state.demoVotes.map(v => {
+        // 約35%の児童が対話を通じて意見を少し移動させるシミュレーション
+        if (Math.random() < 0.35) {
+          movedCount++;
+          const prevX = v.x;
+          const prevY = v.y;
+          // 解決策が見つかって「実現しやすい（右方向）」へシフトしたり、少数意見に共感して動く
+          const nextX = Math.max(-95, Math.min(95, Math.round(v.x + (Math.random() * 50 - 10))));
+          const nextY = Math.max(-95, Math.min(95, Math.round(v.y + (Math.random() * 36 - 15))));
+          return {
+            ...v,
+            prevX,
+            prevY,
+            x: nextX,
+            y: nextY,
+            reason: v.reason + '（友達の意見を聞いて、工夫すれば実現できそうだと思った！）'
+          };
+        }
+        return v;
+      });
+
+      state.boardOptions.showTrails = true;
+      document.getElementById('btnTrails').className = 'px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-bold transition flex items-center gap-1.5 bg-indigo-50 border-indigo-200 text-indigo-700';
+
+      switchMode('board');
+      showToast(`${movedCount}人の「話し合い後の意見移動（矢印）」を再現しました！`, 'success');
+    };
+
+    function gaussianRandom(mean, stdev) {
+      const u = 1 - Math.random();
+      const v = Math.random();
+      const z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      return z * stdev + mean;
+    }
+
+    // CSV出力
+    window.exportCSV = function () {
+      const votes = getAllActiveVotes();
+      if (votes.length === 0) {
+        showToast('出力するデータがありません', 'warning');
+        return;
+      }
+      const header = ['番号', '名前', 'X座標(横)', 'Y座標(縦)', 'エリア', '理由・コメント'];
+      const rows = votes.map((v, i) => {
+        const area = (v.x >= 0 && v.y >= 0) ? '右上' : (v.x < 0 && v.y >= 0) ? '左上' : (v.x < 0 && v.y < 0) ? '左下' : '右下';
+        const safeName = `"${(v.name || '').replace(/"/g, '""')}"`;
+        const safeReason = `"${(v.reason || '').replace(/"/g, '""')}"`;
+        return [i + 1, safeName, v.x, v.y, area, safeReason].join(',');
+      });
+      const csvContent = '\uFEFF' + [header.join(','), ...rows].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ポジショニングマップ_${state.roomCode}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('CSVファイルをダウンロードしました', 'success');
+    };
+
+    // マップのPNG画像出力
+    window.exportCanvasImage = function () {
+      // ボード画面でない場合は一度ボードを描画してから保存
+      renderBoard();
+      const link = document.createElement('a');
+      link.download = `2軸マップ分布図_${state.roomCode}.png`;
+      link.href = boardCanvas.toDataURL('image/png');
+      link.click();
+      showToast('分布図の画像を保存しました', 'success');
+    };
+
+    // ============================================================================
+    // 5. 画面モード切替・モーダル・ユーティリティ
+    // ============================================================================
+    window.switchMode = function (mode) {
+      state.mode = mode;
+
+      const views = {
+        student: document.getElementById('viewStudent'),
+        board: document.getElementById('viewBoard'),
+        teacher: document.getElementById('viewTeacher')
+      };
+      const tabs = {
+        student: document.getElementById('tabStudent'),
+        board: document.getElementById('tabBoard'),
+        teacher: document.getElementById('tabTeacher')
+      };
+
+      Object.keys(views).forEach(k => {
+        if (k === mode) {
+          views[k].classList.remove('hidden');
+          views[k].classList.add(k === 'board' ? 'flex' : 'grid');
+          tabs[k].className = 'flex-1 lg:flex-initial px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 bg-white text-indigo-600 shadow-sm';
+        } else {
+          views[k].classList.add('hidden');
+          views[k].classList.remove('flex', 'grid');
+          tabs[k].className = 'flex-1 lg:flex-initial px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900';
+        }
+      });
+
+      const fsBtn = document.getElementById('fullscreenBtn');
+      if (mode === 'board') {
+        fsBtn.classList.remove('hidden');
+        fsBtn.classList.add('inline-flex');
+      } else {
+        fsBtn.classList.add('hidden');
+        fsBtn.classList.remove('inline-flex');
+      }
+
+      // キャンバスサイズ再計算＆再描画
+      requestAnimationFrame(() => {
+        updateAllViews();
+      });
+    };
+
+    window.toggleFullscreenBoard = function () {
+      state.isFullscreen = !state.isFullscreen;
+      const header = document.getElementById('appHeader');
+      const listCol = document.getElementById('boardListCol');
+      const mapCol = document.getElementById('boardMapCol');
+      const btn = document.getElementById('fullscreenBtn');
+
+      if (state.isFullscreen) {
+        document.body.classList.add('fullscreen-mode');
+        header.classList.add('hidden');
+        listCol.classList.add('hidden');
+        mapCol.classList.remove('lg:col-span-7');
+        mapCol.classList.add('lg:col-span-12');
+        btn.innerHTML = '<i class="fa-solid fa-compress"></i><span>もとのサイズに戻す</span>';
+      } else {
+        document.body.classList.remove('fullscreen-mode');
+        header.classList.remove('hidden');
+        listCol.classList.remove('hidden');
+        mapCol.classList.add('lg:col-span-7');
+        mapCol.classList.remove('lg:col-span-12');
+        btn.innerHTML = '<i class="fa-solid fa-expand"></i><span>大きく映す</span>';
+      }
+      requestAnimationFrame(() => renderBoard());
+    };
+
+    // ルームモーダル
+    window.openRoomModal = () => {
+      document.getElementById('roomCodeInput').value = state.roomCode;
+      document.getElementById('roomModal').classList.remove('hidden');
+    };
+    window.closeRoomModal = () => document.getElementById('roomModal').classList.add('hidden');
+    window.setQuickRoom = (code) => {
+      document.getElementById('roomCodeInput').value = code;
+    };
+    window.applyRoomChange = () => {
+      const val = document.getElementById('roomCodeInput').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+      if (!val) return;
+      state.roomCode = val;
+      document.getElementById('currentRoomDisplay').textContent = val;
+      state.demoVotes = [];
+      state.studentPin.hasSubmitted = false;
+      state.studentPin.prevX = null;
+      state.studentPin.prevY = null;
+      updateMyVoteUI();
+      closeRoomModal();
+      if (state.isCloudActive) {
+        setupFirestoreListeners();
+      }
+      updateAllViews();
+      showToast(`ルーム「${val}」に切り替えました`, 'info');
+    };
+
+    // リセット確認モーダル
+    window.openResetConfirmModal = () => document.getElementById('resetConfirmModal').classList.remove('hidden');
+    window.closeResetConfirmModal = () => document.getElementById('resetConfirmModal').classList.add('hidden');
+    window.confirmResetAllVotes = async () => {
+      state.demoVotes = [];
+      state.studentPin.hasSubmitted = false;
+      state.studentPin.prevX = null;
+      state.studentPin.prevY = null;
+      closeSelectedVotePopup();
+      updateMyVoteUI();
+
+      if (state.isCloudActive && currentUser && db) {
+        for (const v of state.cloudVotes) {
+          try {
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'posmap_votes', v.id));
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+      closeResetConfirmModal();
+      updateAllViews();
+      showToast('回答データをすべてリセットしました', 'info');
+    };
+
+    // ガイドモーダル
+    window.openGuideModal = () => document.getElementById('guideModal').classList.remove('hidden');
+    window.closeGuideModal = () => document.getElementById('guideModal').classList.add('hidden');
+
+    function updateAllViews() {
+      renderStudentCanvas();
+      renderBoard();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const colors = {
+        success: 'bg-emerald-600 text-white',
+        warning: 'bg-amber-500 text-white',
+        info: 'bg-slate-800 text-white'
+      };
+      const icons = {
+        success: 'fa-circle-check',
+        warning: 'fa-circle-exclamation',
+        info: 'fa-circle-info'
+      };
+      toast.className = `${colors[type] || colors.info} px-4 py-3 rounded-xl shadow-lg text-xs sm:text-sm font-bold flex items-center gap-2 transition-all duration-300 transform translate-y-2 opacity-0`;
+      toast.innerHTML = `<i class="fa-solid ${icons[type] || icons.info}"></i><span>${escapeHtml(message)}</span>`;
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 2800);
+    }
+
+    // ウィンドウリサイズ対応
+    window.addEventListener('resize', () => {
+      updateAllViews();
+    });
+
+    // 初期起動処理
+    window.onload = () => {
+      setupStudentCanvasEvents();
+      setupBoardCanvasEvents();
+      updateStudentCoordInfo();
+      updateAllViews();
+      initCloudConnection();
+    };
+  </script>
+</body>
+</html>
